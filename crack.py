@@ -1,3 +1,8 @@
+#!/usr/bin/python
+# -*- coding: utf-8 -*-
+
+from __future__ import print_function
+
 import os
 import time
 from io import BytesIO
@@ -10,36 +15,35 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from os import listdir
 
-USERNAME = '15874295385'
-PASSWORD = 'fpdpvx119'
-
-TEMPLATES_FOLDER = 'templates/'
+TEMPLATES_FOLDER = os.path.join(os.path.abspath(os.path.dirname(__file__)), 'templates/')
 
 
 class CrackWeiboSlide():
-    def __init__(self):
+    def __init__(self, username, password):
         self.url = 'https://passport.weibo.cn/signin/login?entry=mweibo&r=https://m.weibo.cn/'
-        self.browser = webdriver.Chrome()
+        self.browser = webdriver.PhantomJS(executable_path='/usr/local/bin/phantomjs')
+        self.browser.set_window_size(1050, 840)
         self.wait = WebDriverWait(self.browser, 20)
-        self.username = USERNAME
-        self.password = PASSWORD
-    
+        self.username = username
+        self.password = password
+
     def __del__(self):
         self.browser.close()
-    
+
     def open(self):
         """
         打开网页输入用户名密码并点击
         :return: None
         """
         self.browser.get(self.url)
+        time.sleep(1)
         username = self.wait.until(EC.presence_of_element_located((By.ID, 'loginName')))
         password = self.wait.until(EC.presence_of_element_located((By.ID, 'loginPassword')))
         submit = self.wait.until(EC.element_to_be_clickable((By.ID, 'loginAction')))
         username.send_keys(self.username)
         password.send_keys(self.password)
         submit.click()
-    
+
     def get_position(self):
         """
         获取验证码位置
@@ -56,7 +60,7 @@ class CrackWeiboSlide():
         top, bottom, left, right = location['y'], location['y'] + size['height'], location['x'], location['x'] + size[
             'width']
         return (top, bottom, left, right)
-    
+
     def get_screenshot(self):
         """
         获取网页截图
@@ -65,7 +69,7 @@ class CrackWeiboSlide():
         screenshot = self.browser.get_screenshot_as_png()
         screenshot = Image.open(BytesIO(screenshot))
         return screenshot
-    
+
     def get_image(self, name='captcha.png'):
         """
         获取验证码图片
@@ -77,7 +81,7 @@ class CrackWeiboSlide():
         captcha = screenshot.crop((left, top, right, bottom))
         captcha.save(name)
         return captcha
-    
+
     def is_pixel_equal(self, image1, image2, x, y):
         """
         判断两个像素是否相同
@@ -96,7 +100,7 @@ class CrackWeiboSlide():
             return True
         else:
             return False
-    
+
     def same_image(self, image, template):
         """
         识别相似验证码
@@ -104,20 +108,22 @@ class CrackWeiboSlide():
         :param template: 模板
         :return:
         """
+        rgba_image = image.convert('RGBA')
+
         # 相似度阈值
         threshold = 0.99
         count = 0
-        for x in range(image.width):
-            for y in range(image.height):
+        for x in range(rgba_image.width):
+            for y in range(rgba_image.height):
                 # 判断像素是否相同
-                if self.is_pixel_equal(image, template, x, y):
+                if self.is_pixel_equal(rgba_image, template, x, y):
                     count += 1
-        result = float(count) / (image.width * image.height)
+        result = float(count) / (rgba_image.width * rgba_image.height)
         if result > threshold:
             print('成功匹配')
             return True
         return False
-    
+
     def detect_image(self, image):
         """
         匹配图片
@@ -132,7 +138,7 @@ class CrackWeiboSlide():
                 numbers = [int(number) for number in list(template_name.split('.')[0])]
                 print('拖动顺序', numbers)
                 return numbers
-    
+
     def move(self, numbers):
         """
         根据顺序拖动
@@ -165,21 +171,67 @@ class CrackWeiboSlide():
                 # 计算下一次偏移
                 dx = circles[numbers[index + 1] - 1].location['x'] - circle.location['x']
                 dy = circles[numbers[index + 1] - 1].location['y'] - circle.location['y']
-    
+
+    def get_exactly(self, im):
+        """ 精确剪切"""
+        imin = -1
+        imax = -1
+        jmin = -1
+        jmax = -1
+        row = im.size[0]
+        col = im.size[1]
+        for i in range(row):
+            for j in range(col):
+                if im.load()[i, j] != 255:
+                    imax = i
+                    break
+            if imax == -1:
+                imin = i
+
+        for j in range(col):
+            for i in range(row):
+                if im.load()[i, j] != 255:
+                    jmax = j
+                    break
+            if jmax == -1:
+                jmin = j
+        return (imin + 1, jmin + 1, imax + 1, jmax + 1)
+
+    def get_image2(self, name='captcha.png'):
+        im0 = Image.open(BytesIO(self.browser.get_screenshot_as_png()))
+        im0.save('screenshot.png')
+        box = self.browser.find_element_by_id('patternCaptchaHolder')
+        im = im0.crop((int(box.location['x']) + 10, int(box.location['y']) + 100,
+                       int(box.location['x']) + box.size['width'] - 10,
+                       int(box.location['y']) + box.size['height'] - 10)).convert('L')
+        newBox = self.get_exactly(im)
+        im = im.crop(newBox)
+        im.save(name)
+        return im
+
+    def get_cookies(self):
+        cookie = {}
+        for elem in self.browser.get_cookies():
+            cookie[elem["name"]] = elem["value"]
+        return cookie
+
     def crack(self):
         """
         破解入口
         :return:
         """
         self.open()
+        time.sleep(3.5)
         # 获取验证码图片
-        image = self.get_image('captcha.png')
+        image = self.get_image2('captcha.png')
         numbers = self.detect_image(image)
         self.move(numbers)
         time.sleep(10)
-        print('识别结束')
+        print('识别结束. cookie: %s' % self.get_cookies()),
+        return self.get_cookies()
 
 
 if __name__ == '__main__':
-    crack = CrackWeiboSlide()
+    crack = CrackWeiboSlide('13414760074', 'lckqwe123.')
     crack.crack()
+
