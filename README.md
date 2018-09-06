@@ -1,6 +1,8 @@
 # CrackWeiboSlide
 Crack Weibo Slide Captcha
 
+![](imgs/crakeslider.jpg)
+
 # 更新
 * 更新截图方式：crack.CrackWeiboSlide.get_image2        
         
